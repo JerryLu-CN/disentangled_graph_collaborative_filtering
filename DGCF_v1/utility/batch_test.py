@@ -157,7 +157,7 @@ def test(sess, model, users_to_test, drop_flag=False, batch_test_flag=False,trai
 
         user_batch = test_users[start: end]
 
-        if batch_test_flag:
+        if batch_test_flag:  # item是否也分batch来test  always True so far
 
             n_item_batchs = ITEM_NUM // i_batch_size + 1
             rate_batch = np.zeros(shape=(len(user_batch), ITEM_NUM))

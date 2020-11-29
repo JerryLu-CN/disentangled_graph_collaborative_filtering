@@ -34,7 +34,7 @@ class Data(object):
                     items = [int(i) for i in l[1:]]
                     uid = int(l[0])
                     self.exist_users.append(uid)
-                    self.n_items = max(self.n_items, max(items))
+                    self.n_items = max(self.n_items, max(items)) # find the maximum of index
                     self.n_users = max(self.n_users, uid)
                     self.n_train += len(items)
 
@@ -48,12 +48,12 @@ class Data(object):
                         continue
                     self.n_items = max(self.n_items, max(items))
                     self.n_test += len(items)
-        self.n_items += 1
+        self.n_items += 1 # 因为index从0开始？
         self.n_users += 1
 
         self.print_statistics()
 
-        self.R = sp.dok_matrix((self.n_users, self.n_items), dtype=np.float32)
+        self.R = sp.dok_matrix((self.n_users, self.n_items), dtype=np.float32) # dict of key matrix
 
         self.train_items, self.test_set = {}, {}
         with open(train_file) as f_train:
@@ -90,7 +90,7 @@ class Data(object):
             print('already load adj matrix', adj_mat.shape, time() - t1)
 
         except Exception:
-            adj_mat, norm_adj_mat, mean_adj_mat = self.create_adj_mat()
+            adj_mat, norm_adj_mat, mean_adj_mat = self.create_adj_mat()  # adj_mat [n_user+n_item, n_user+n_item]
             sp.save_npz(self.path + '/s_adj_mat.npz', adj_mat)
             sp.save_npz(self.path + '/s_norm_adj_mat.npz', norm_adj_mat)
             sp.save_npz(self.path + '/s_mean_adj_mat.npz', mean_adj_mat)
@@ -100,7 +100,7 @@ class Data(object):
         except Exception:
             adj_mat=adj_mat
             rowsum = np.array(adj_mat.sum(1))
-            d_inv = np.power(rowsum, -0.5).flatten()
+            d_inv = np.power(rowsum, -0.5).flatten() # 计算每个item/user节点的度的 1/sqrt(D)
             d_inv[np.isinf(d_inv)] = 0.
             d_mat_inv = sp.diags(d_inv)
 
@@ -133,7 +133,7 @@ class Data(object):
             d_inv[np.isinf(d_inv)] = 0.
             d_mat_inv = sp.diags(d_inv)
 
-            norm_adj = d_mat_inv.dot(adj)
+            norm_adj = d_mat_inv.dot(adj) # 这个是对每个node去norm所有的连接权重, 按行norm
             # norm_adj = adj.dot(d_mat_inv)
             print('generate single-normalized adjacency matrix.')
             return norm_adj.tocoo()
@@ -157,7 +157,7 @@ class Data(object):
         for u in self.train_items.keys():
             neg_items = list(set(range(self.n_items)) - set(self.train_items[u]))
             pools = [rd.choice(neg_items) for _ in range(100)]
-            self.neg_pools[u] = pools
+            self.neg_pools[u] = pools  # 产生一次negative pool
         print('refresh negative pools', time() - t1)
 
     def sample(self):
@@ -272,7 +272,7 @@ class Data(object):
 
     def create_sparsity_split(self):
         all_users_to_test = list(self.test_set.keys())
-        user_n_iid = dict()
+        user_n_iid = dict()  # n_iids -> [uid,...]
 
         # generate a dictionary to store (key=n_iids, value=a list of uid).
         for uid in all_users_to_test:
@@ -296,7 +296,7 @@ class Data(object):
 
         split_state = []
         for idx, n_iids in enumerate(sorted(user_n_iid)):
-            temp += user_n_iid[n_iids]
+            temp += user_n_iid[n_iids] # uids of which iid counts equals n_iids
             n_rates += n_iids * len(user_n_iid[n_iids])
             n_count -= n_iids * len(user_n_iid[n_iids])
 

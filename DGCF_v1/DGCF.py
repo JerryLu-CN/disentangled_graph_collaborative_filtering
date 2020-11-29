@@ -189,7 +189,7 @@ class GDCF(object):
                     p_test = pick_
                     p_train = False
 
-                A_factors, D_col_factors, D_row_factors = self._convert_A_values_to_A_factors_with_P(n_factors_l, A_values, pick= p_train)
+                A_factors, D_col_factors, D_row_factors = self._convert_A_values_to_A_factors_with_P(n_factors_l, A_values, pick= p_train) # 每轮迭代 A_values都在更新
                 A_factors_t, D_col_factors_t, D_row_factors_t = self._convert_A_values_to_A_factors_with_P(n_factors_l, A_values, pick= p_test)
                 for i in range(0, n_factors_l):
                     # update the embeddings via simplified graph convolution layer
@@ -238,6 +238,8 @@ class GDCF(object):
                     #layer_embeddings = iter_embeddings
                     output_factors_distribution.append(A_factors)
 
+                ## iter for factor end ##
+
             # sum messages of neighbors, [n_users+n_items, embed_size]
             side_embeddings = tf.concat(layer_embeddings, 1)
             side_embeddings_t = tf.concat(layer_embeddings_t, 1)
@@ -248,6 +250,8 @@ class GDCF(object):
             all_embeddings_t += [ego_embeddings_t]
             all_embeddings += [ego_embeddings]
 
+            ## iter for iteration end ##
+
         all_embeddings = tf.stack(all_embeddings, 1)
         all_embeddings = tf.reduce_mean(all_embeddings, axis=1, keepdims=False)
 
@@ -256,6 +260,8 @@ class GDCF(object):
 
         u_g_embeddings, i_g_embeddings = tf.split(all_embeddings, [self.n_users, self.n_items], 0)
         u_g_embeddings_t, i_g_embeddings_t = tf.split(all_embeddings_t, [self.n_users, self.n_items], 0)
+
+        ## iter for layers end ##
 
         return u_g_embeddings, i_g_embeddings, output_factors_distribution, u_g_embeddings_t, i_g_embeddings_t
 
@@ -303,7 +309,7 @@ class GDCF(object):
     def model_save(self, path, dataset, ses, savename='best_model'):
         save_pretrain_path = '%spretrain/%s/%s' % (path, dataset, savename)        
         np.savez(save_pretrain_path,user_embed=np.array(self.weights['user_embedding'].eval(session=ses)),
-                                    item_embed=np.array(model.weights['item_embedding'].eval(session=ses))) 
+                                    item_embed=np.array(model.weights['item_embedding'].eval(session=ses))) # ???
 
     def _create_distance_correlation(self, X1, X2):
 
@@ -346,12 +352,12 @@ class GDCF(object):
         return dcor
 
     def _convert_A_values_to_A_factors_with_P(self, f_num, A_factor_values, pick=True):
-
+        # A_factor_values [n_factors, n_user+n_item, n_user+n_item]
         A_factors = []
         D_col_factors = []
         D_row_factors = []
         # get the indices of adjacency matrix.
-        A_indices = np.mat([self.all_h_list, self.all_t_list]).transpose()
+        A_indices = np.mat([self.all_h_list, self.all_t_list]).transpose()  # [N-of-indice ,2]
         D_indices = np.mat([list(range(self.n_users+self.n_items)), list(range(self.n_users+self.n_items))]).transpose()
 
         # apply factor-aware softmax function over the values of adjacency matrix
@@ -365,7 +371,7 @@ class GDCF(object):
             A_factor_scores = A_factor_scores * index
             A_factor_scores = A_factor_scores / tf.reduce_sum(A_factor_scores, 0)
         else:
-            A_factor_scores = tf.nn.softmax(A_factor_values, 0)
+            A_factor_scores = tf.nn.softmax(A_factor_values, 0) # [n_factors, n_user+n_item, n_user+n_item]
 
         for i in range(0, f_num):
             # in the i-th factor, couple the adjacency values with the adjacency indices
@@ -385,7 +391,7 @@ class GDCF(object):
             D_i_row_tensor = tf.SparseTensor(D_indices, D_i_row_scores, self.A_in_shape)
 
             A_factors.append(A_i_tensor)
-            D_col_factors.append(D_i_col_tensor)
+            D_col_factors.append(D_i_col_tensor) # [n_factor, eye-matrix] 1/sqrt(D)
             D_row_factors.append(D_i_row_tensor)
 
         # return a (n_factors)-length list of laplacian matrix
@@ -441,7 +447,7 @@ if __name__ == '__main__':
 
     all_h_list, all_t_list, all_v_list = load_adjacency_list_data(plain_adj)
 
-    A_values_init = create_initial_A_values(args.n_factors, all_v_list)
+    A_values_init = create_initial_A_values(args.n_factors, all_v_list) # [all_v_list] * n_factors
 
     config['norm_adj'] = plain_adj
     config['all_h_list'] = all_h_list
@@ -467,9 +473,10 @@ if __name__ == '__main__':
 
     tf_config = tfv1.ConfigProto()
     tf_config.gpu_options.allow_growth = True
+    # If true, the allocator does not pre-allocate the entire specified
+    # GPU memory region, instead starting small and growing as needed.
+
     sess = tfv1.Session(config=tf_config)
-
-
     sess.run(tfv1.global_variables_initializer())
     cur_best_pre_0 = 0.
 
@@ -506,7 +513,7 @@ if __name__ == '__main__':
         if np.isnan(loss) == True:
             print('ERROR: loss is nan.')
             print(mf_loss, emb_loss)
-            sys.exit()
+            sys.exit() # ???
 
         # print the test evaluation metrics each 10 epochs; pos:neg = 1:10.
         if (epoch + 1)  % args.show_step != 0:
@@ -526,7 +533,7 @@ if __name__ == '__main__':
                 feed_dict={model.users: users, 
                         model.pos_items: pos_items,
                         model.neg_items: neg_items,
-                        model.A_values: A_values_init,
+                        model.A_values: A_values_init,  # 提供初始值
                         model.cor_users: cor_users,
                         model.cor_items: cor_items})
             loss_test += batch_loss_test / n_batch
