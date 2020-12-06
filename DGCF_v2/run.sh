@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python DGCF.py --dataset gowalla --batch_size 2000 --n_layers 1 --n_iterations 2 --corDecay 0.01 --n_factors 4 --show_step 3 --lr 0.001
