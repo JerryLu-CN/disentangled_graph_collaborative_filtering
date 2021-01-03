@@ -112,8 +112,11 @@ class GDCF(object):
         else:
             self.cor_loss = args.corDecay * self.create_cor_loss(self.cor_u_g_embeddings, self.cor_i_g_embeddings)                   
 
+        # project_vector Orthogonal loss
+        self.orthogonal_loss = self._create_orthogonal_loss(self.weights['project_vector'])
+
         # self.loss = self.mf_loss + self.emb_loss + self.reg_loss
-        self.loss = self.mf_loss + self.emb_loss + self.cor_loss
+        self.loss = self.mf_loss + self.emb_loss + self.cor_loss + self.orthogonal_loss
         self.opt = tfv1.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
 
     def _init_weights(self):
@@ -126,12 +129,16 @@ class GDCF(object):
                                                         name='user_embedding')
             all_weights['item_embedding'] = tf.Variable(initializer([self.n_items, self.emb_dim]),
                                                         name='item_embedding')
+            all_weights['project_vector'] = tf.Variable(initializer([self.n_factors, self.emb_dim]),
+                                                          name='project_vector')
             print('using xavier initialization')
         else:
             all_weights['user_embedding'] = tf.Variable(initial_value=self.pretrain_data['user_embed'], trainable=True,
                                                         name='user_embedding', dtype=tf.float32)
             all_weights['item_embedding'] = tf.Variable(initial_value=self.pretrain_data['item_embed'], trainable=True,
                                                         name='item_embedding', dtype=tf.float32)
+            all_weights['project_vector'] = tf.Variable(initial_value=self.pretrain_data['project_vector'], trainable=True,
+                                                        name='project_vector', dtype=tf.float32)
             print('using pretrained initialization')
 
         return all_weights
@@ -160,20 +167,22 @@ class GDCF(object):
 
         output_factors_distribution = []
         
-        factor_num = [self.n_factors, self.n_factors, self.n_factors]
-        iter_num = [self.n_iterations, self.n_iterations, self.n_iterations]
+        factor_num = [self.n_factors, self.n_factors, self.n_factors] # deprecated
+        iter_num = [self.n_iterations, self.n_iterations, self.n_iterations] # deprecated
         for k in range(0, self.n_layers):
             # prepare the output embedding list
             # .... layer_embeddings stores a (n_factors)-len list of outputs derived from the last routing iterations.
-            n_factors_l = factor_num[k]
-            n_iterations_l = iter_num[k]
+            n_factors_l = factor_num[k] # deprecated
+            n_iterations_l = iter_num[k] # deprecated
             layer_embeddings = []
             layer_embeddings_t = []
             
             # split the input embedding table
             # .... ego_layer_embeddings is a (n_factors)-leng list of embeddings [n_users+n_items, embed_size/n_factors]
-            ego_layer_embeddings = tf.split(ego_embeddings, n_factors_l, 1)
-            ego_layer_embeddings_t = tf.split(ego_embeddings, n_factors_l, 1) 
+            # ego_layer_embeddings = tf.split(ego_embeddings, n_factors_l, 1)
+            # ego_layer_embeddings_t = tf.split(ego_embeddings, n_factors_l, 1)
+            ego_layer_embeddings = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
+            ego_layer_embeddings_t = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
 
             # perform routing mechanism
             for t in range(0, n_iterations_l):
@@ -195,8 +204,8 @@ class GDCF(object):
                     # update the embeddings via simplified graph convolution layer
                     # .... D_col_factors[i] * A_factors[i] * D_col_factors[i] is Laplacian matrix w.r.t. the i-th factor
                     # .... factor_embeddings is a dense tensor with the size of [n_users+n_items, embed_size/n_factors]
-                    factor_embeddings = tf.sparse.sparse_dense_matmul(D_col_factors[i], ego_layer_embeddings[i])
-                    factor_embeddings_t = tf.sparse.sparse_dense_matmul(D_col_factors_t[i], ego_layer_embeddings_t[i])
+                    factor_embeddings = tf.sparse.sparse_dense_matmul(D_col_factors[i], ego_layer_embeddings[:,i,:])
+                    factor_embeddings_t = tf.sparse.sparse_dense_matmul(D_col_factors_t[i], ego_layer_embeddings_t[:,i,:])
 
                     factor_embeddings_t = tf.sparse.sparse_dense_matmul(A_factors_t[i], factor_embeddings_t)
                     factor_embeddings = tf.sparse.sparse_dense_matmul(A_factors[i], factor_embeddings)
@@ -215,7 +224,7 @@ class GDCF(object):
                     # .... head_factor_embeddings is a dense tensor with the size of [all_h_list, embed_size/n_factors]
                     # .... analogous to tail_factor_embeddings
                     head_factor_embedings = tf.nn.embedding_lookup(factor_embeddings, self.all_h_list)
-                    tail_factor_embedings = tf.nn.embedding_lookup(ego_layer_embeddings[i], self.all_t_list)
+                    tail_factor_embedings = tf.nn.embedding_lookup(ego_layer_embeddings[:,i,:], self.all_t_list)
 
                     # .... constrain the vector length
                     # .... make the following attentive weights within the range of (0,1)
@@ -223,7 +232,7 @@ class GDCF(object):
                     tail_factor_embedings = tf.math.l2_normalize(tail_factor_embedings, axis=1)
 
                     # get the attentive weights
-                    # .... A_factor_values is a dense tensor with the size of [all_h_list,1]
+                    # .... A_factor_values is a dense tensor with the size of [all_h_list,]
                     A_factor_values = tf.reduce_sum(tf.multiply(head_factor_embedings, tf.tanh(tail_factor_embedings)), axis=1)
 
                     # update the attentive weights
@@ -241,9 +250,10 @@ class GDCF(object):
                 ## iter for factor end ##
 
             # sum messages of neighbors, [n_users+n_items, embed_size]
-            side_embeddings = tf.concat(layer_embeddings, 1)
-            side_embeddings_t = tf.concat(layer_embeddings_t, 1)
-            
+            #side_embeddings = tf.concat(layer_embeddings, 1) ## 需要一个融合embedding的方法
+            #side_embeddings_t = tf.concat(layer_embeddings_t, 1)
+            side_embeddings = self._combine_multi_factor_embedding(layer_embeddings)
+            side_embeddings_t = self._combine_multi_factor_embedding(layer_embeddings_t)
             ego_embeddings = side_embeddings
             ego_embeddings_t = side_embeddings_t
             # concatenate outputs of all layers
@@ -298,7 +308,7 @@ class GDCF(object):
         ui_factor_embeddings = tf.split(ui_embeddings, self.n_factors, 1)
 
         for i in range(0, self.n_factors-1):
-            x = ui_factor_embeddings[i]
+            x = ui_factor_embeddings[i] # [batch_size, embed_size/n_factors]
             y = ui_factor_embeddings[i+1]
             cor_loss += self._create_distance_correlation(x, y)
 
@@ -309,7 +319,8 @@ class GDCF(object):
     def model_save(self, path, dataset, ses, savename='best_model'):
         save_pretrain_path = '%spretrain/%s/%s' % (path, dataset, savename)        
         np.savez(save_pretrain_path,user_embed=np.array(self.weights['user_embedding'].eval(session=ses)),
-                                    item_embed=np.array(model.weights['item_embedding'].eval(session=ses))) # ???
+                                    item_embed=np.array(model.weights['item_embedding'].eval(session=ses)),
+                                    project_vector=np.array(model.weights['project_vector'].eval(session=ses))) # ???
 
     def _create_distance_correlation(self, X1, X2):
 
@@ -323,7 +334,7 @@ class GDCF(object):
             # .... D with the size of [batch_size, batch_size]
             # X = tf.math.l2_normalize(XX, axis=1)
 
-            r = tf.reduce_sum(tf.square(X), 1, keepdims=True)
+            r = tf.reduce_sum(tf.square(X), 1, keepdims=True) # [batch_size, 1]
             D = tf.sqrt(tf.maximum(r - 2 * tf.matmul(a=X, b=X, transpose_b=True) + tf.transpose(r), 0.0) + 1e-8)
  
             # # calculate the centered distance of X
@@ -357,7 +368,7 @@ class GDCF(object):
         D_col_factors = []
         D_row_factors = []
         # get the indices of adjacency matrix.
-        A_indices = np.mat([self.all_h_list, self.all_t_list]).transpose()  # [N-of-indice ,2]
+        A_indices = np.mat([self.all_h_list, self.all_t_list]).transpose()  # [N-of-indice ,2] 包含所有邻接矩阵是1位置的index
         D_indices = np.mat([list(range(self.n_users+self.n_items)), list(range(self.n_users+self.n_items))]).transpose()
 
         # apply factor-aware softmax function over the values of adjacency matrix
@@ -397,6 +408,42 @@ class GDCF(object):
         # return a (n_factors)-length list of laplacian matrix
         return A_factors, D_col_factors, D_row_factors
 
+    def _project_with_normal_vector(self, e, w):
+        '''
+        perform TransH-like projection for embedding e
+        e: embedding matrix for entities, [n_users + n_items, emb_dim]
+        w: normal vector of hypeplane for each factor, [n_factors, emb_dim]
+        '''
+        norm_w = tf.nn.l2_normalize(w, 1) # normalize each vector to unit vector
+        hw_t = tf.expand_dims(tf.matmul(e, norm_w, transpose_b=True), -1) # [n_users+n_items, n_factor, 1]
+        norm_w_expand = tf.expand_dims(norm_w, 0) # [1, n_factor, emb_dim]
+        whw_t = tf.multiply(hw_t, norm_w_expand) # [n_users+n_items, n_factor, emb_dim]
+        h_expand = tf.expand_dims(e, 1) # [n_users+n_items, 1, emb_dim]
+        return h_expand - whw_t # [n_users+n_items, n_factor, emb_dim]
+
+    def _combine_multi_factor_embedding_with_attention(self, layer_embeddings, ego_layer_embeddings):
+        '''
+        combine a n_factor-length list of [n_user+n_items, embed_size] tensors to a [n_user+n_items, embed_size] tensor
+        attention version
+        :param layer_embeddings: n_factor-length list of aggregated embedding outputs
+        :param ego_layer_embeddings: embeddings of the last layer
+        '''
+        pass
+
+    def _combine_multi_factor_embedding(self, layer_embeddings):
+        '''
+        投影到各个子平面的向量直接加在一起或许能反映结果，因为损失会让各个超平面尽量正交
+        '''
+        return tf.reduce_sum(tf.stack(layer_embeddings, 0), axis=0)
+
+    def _create_orthogonal_loss(self, project_vector):
+        '''兼顾x和y之间趋于0和x*x之间接近1'''
+        return tf.reduce_sum(tf.math.abs(tf.matmul(project_vector, project_vector, transpose_b=True) \
+                             - tf.eye(self.n_factors)))
+
+    def _create_vector_l2_loss(self, project_vector):
+        '''deprecated'''
+        return tf.reduce_mean(tf.math.abs(1 - tf.reduce_sum(tf.square(project_vector), axis=1)))
 
 def load_best(name="best_model"):
     pretrain_path = '%spretrain/%s/%s.npz' % (args.proj_path, args.dataset, name)
@@ -490,16 +537,16 @@ if __name__ == '__main__':
     should_stop = False
     for epoch in range(args.epoch):
         t1 = time()
-        loss, mf_loss, emb_loss, cor_loss = 0., 0., 0., 0.
+        loss, mf_loss, emb_loss, cor_loss, orthogonal_loss = 0., 0., 0., 0., 0.
         n_batch = data_generator.n_train // args.batch_size + 1
         cor_batch_size = int(max(data_generator.n_users/n_batch, data_generator.n_items/n_batch))
 
         for idx in range(n_batch):
             users, pos_items, neg_items = data_generator.sample()
             cor_users, cor_items = sample_cor_samples(data_generator.n_users, data_generator.n_items, cor_batch_size)
-            _, batch_loss, batch_mf_loss, batch_emb_loss, batch_cor_loss = sess.run([model.opt, model.loss, 
+            _, batch_loss, batch_mf_loss, batch_emb_loss, batch_cor_loss, batch_orthogonal_loss = sess.run([model.opt, model.loss,
                                                                                     model.mf_loss, model.emb_loss, 
-                                                                                    model.cor_loss],
+                                                                                    model.cor_loss, model.orthogonal_loss],
                                                                                     feed_dict={model.users: users, 
                                                                                             model.pos_items: pos_items,
                                                                                             model.neg_items: neg_items,
@@ -509,27 +556,29 @@ if __name__ == '__main__':
             mf_loss += batch_mf_loss / n_batch
             emb_loss += batch_emb_loss / n_batch
             cor_loss += batch_cor_loss / n_batch
+            orthogonal_loss += batch_orthogonal_loss / n_batch
 
         if np.isnan(loss) == True:
             print('ERROR: loss is nan.')
-            print(mf_loss, emb_loss)
+            print(mf_loss, emb_loss, orthogonal_loss)
             sys.exit() # ???
 
         # print the test evaluation metrics each 10 epochs; pos:neg = 1:10.
         if (epoch + 1)  % args.show_step != 0:
             if args.verbose > 0 and epoch % args.verbose == 0:
-                perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (epoch, time() - t1, loss, mf_loss, emb_loss, cor_loss)
+                perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f + %.5f]' % \
+                           (epoch, time() - t1, loss, mf_loss, emb_loss, cor_loss, orthogonal_loss)
                 print(perf_str)
             # Skip testing
             continue
 
         # Begin test at this epoch. 
-        loss_test, mf_loss_test, emb_loss_test, cor_loss_test = 0., 0., 0., 0.
+        loss_test, mf_loss_test, emb_loss_test, cor_loss_test, orthogonal_loss_test = 0., 0., 0., 0., 0.
         for idx in range(n_batch):
             cor_users, cor_items = sample_cor_samples(data_generator.n_users, data_generator.n_items, cor_batch_size)
             users, pos_items, neg_items = data_generator.sample_test()
-            batch_loss_test, batch_mf_loss_test, batch_emb_loss_test, batch_cor_loss_test = sess.run(
-                [model.loss, model.mf_loss, model.emb_loss, model.cor_loss],
+            batch_loss_test, batch_mf_loss_test, batch_emb_loss_test, batch_cor_loss_test, batch_orthogonal_loss_test = \
+                sess.run([model.loss, model.mf_loss, model.emb_loss, model.cor_loss, model.orthogonal_loss],
                 feed_dict={model.users: users, 
                         model.pos_items: pos_items,
                         model.neg_items: neg_items,
@@ -540,6 +589,7 @@ if __name__ == '__main__':
             mf_loss_test += batch_mf_loss_test / n_batch
             emb_loss_test += batch_emb_loss_test / n_batch
             cor_loss_test += batch_cor_loss_test / n_batch
+            orthogonal_loss_test += batch_orthogonal_loss_test / n_batch
 
         t2 = time()
         users_to_test = list(data_generator.test_set.keys())
@@ -555,13 +605,13 @@ if __name__ == '__main__':
         hit_loger.append(ret['hit_ratio'])
 
         if args.verbose > 0:
-            perf_str = 'Epoch %d [%.1fs + %.1fs]: test==[%.5f=%.5f + %.5f + %.5f], recall=[%.5f, %.5f], ' \
+            perf_str = 'Epoch %d [%.1fs + %.1fs]: test==[%.5f=%.5f + %.5f + %.5f + %.5f], recall=[%.5f, %.5f], ' \
                        'precision=[%.5f, %.5f], hit=[%.5f, %.5f], ndcg=[%.5f, %.5f]' % \
-                       (epoch, t2 - t1, t3 - t2, loss_test, mf_loss_test, emb_loss_test, cor_loss_test, ret['recall'][0],
-                       ret['recall'][-1],
-                       ret['precision'][0], ret['precision'][-1], ret['hit_ratio'][0], ret['hit_ratio'][-1],
+                       (epoch, t2 - t1, t3 - t2, loss_test, mf_loss_test, emb_loss_test, cor_loss_test, orthogonal_loss_test,
+                       ret['recall'][0], ret['recall'][-1], ret['precision'][0], ret['precision'][-1], ret['hit_ratio'][0], ret['hit_ratio'][-1],
                        ret['ndcg'][0], ret['ndcg'][-1])
             print(perf_str)
+            print("total time consume: {:.0f}s".format(time() - t0))
             
         cur_best_pre_0, stopping_step, should_stop = early_stopping(ret['recall'][0], cur_best_pre_0, stopping_step, expected_order='acc', flag_step=args.early)
 
