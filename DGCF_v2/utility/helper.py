@@ -37,10 +37,11 @@ def merge_two_dicts(x, y):
     z.update(y)    # modifies z with y's keys and values & returns None
     return z
 
-def early_stopping(log_value, best_value, stopping_step, expected_order='acc', flag_step=100):
+def early_stopping(log_value, best_value, stopping_step, lr_decay_count, expected_order='acc', flag_step=1, lr_decay_tolerate=1):
     # early stopping strategy:
     assert expected_order in ['acc', 'dec']
-
+    should_decay = False
+    should_stop = False
     if (expected_order == 'acc' and log_value >= best_value) or (expected_order == 'dec' and log_value <= best_value):
         stopping_step = 0
         best_value = log_value
@@ -48,8 +49,13 @@ def early_stopping(log_value, best_value, stopping_step, expected_order='acc', f
         stopping_step += 1
 
     if stopping_step >= flag_step:
-        print("Early stopping is trigger at step: {} log:{}".format(flag_step, log_value))
-        should_stop = True
-    else:
-        should_stop = False
-    return best_value, stopping_step, should_stop
+        if lr_decay_count >= lr_decay_tolerate:
+            print("Early stopping is trigger at step: {} log:{}".format(flag_step, log_value))
+            should_stop = True
+        else:
+            stopping_step = 0
+            should_decay = True
+            lr_decay_count += 1
+            print("Learning rate decay!")
+
+    return best_value, stopping_step, should_stop, lr_decay_count, should_decay

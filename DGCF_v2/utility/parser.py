@@ -56,8 +56,10 @@ def parse_args():
     
     parser.add_argument('--show_step', type=int, default=15,
                         help='Test every show_step epochs.')
-    parser.add_argument('--early', type=int, default=40,
-                        help='Step for stopping')           
+    parser.add_argument('--early', type=int, default=30,
+                        help='Step for stopping')
+    parser.add_argument('--decay', type=int, default=0.2,
+                        help='learning rate decay multiply factor')
     parser.add_argument('--Ks', nargs='?', default='[20, 40, 60, 80, 100]',
                         help='Metrics scale')
 

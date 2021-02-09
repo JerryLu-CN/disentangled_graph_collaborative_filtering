@@ -38,7 +38,7 @@ class GDCF(object):
         self.A_in_shape = self.norm_adj.tocoo().shape
 
         self.n_nonzero_elems = self.norm_adj.count_nonzero()
-        self.lr = args.lr
+        self.start_lr = args.lr
         self.emb_dim = args.embed_size
         self.n_factors = args.n_factors
         self.n_iterations = args.n_iterations
@@ -117,6 +117,7 @@ class GDCF(object):
 
         # self.loss = self.mf_loss + self.emb_loss + self.reg_loss
         self.loss = self.mf_loss + self.emb_loss + self.cor_loss + self.orthogonal_loss
+        self.lr = tfv1.placeholder(tf.float32, shape=[])
         self.opt = tfv1.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
 
     def _init_weights(self):
@@ -535,6 +536,9 @@ if __name__ == '__main__':
     loss_loger, pre_loger, rec_loger, ndcg_loger, hit_loger = [], [], [], [], []
     stopping_step = 0
     should_stop = False
+    lr_decay_count = 0
+    should_decay = False
+    learning_rate = model.start_lr
     for epoch in range(args.epoch):
         t1 = time()
         loss, mf_loss, emb_loss, cor_loss, orthogonal_loss = 0., 0., 0., 0., 0.
@@ -551,7 +555,8 @@ if __name__ == '__main__':
                                                                                             model.pos_items: pos_items,
                                                                                             model.neg_items: neg_items,
                                                                                             model.cor_users: cor_users,
-                                                                                            model.cor_items: cor_items})
+                                                                                            model.cor_items: cor_items,
+                                                                                            model.lr: learning_rate})
             loss += batch_loss / n_batch
             mf_loss += batch_mf_loss / n_batch
             emb_loss += batch_emb_loss / n_batch
@@ -613,12 +618,15 @@ if __name__ == '__main__':
             print(perf_str)
             print("total time consume: {:.0f}s".format(time() - t0))
             
-        cur_best_pre_0, stopping_step, should_stop = early_stopping(ret['recall'][0], cur_best_pre_0, stopping_step, expected_order='acc', flag_step=args.early)
+        cur_best_pre_0, stopping_step, should_stop, lr_decay_count, should_decay = \
+            early_stopping(ret['recall'][0], cur_best_pre_0, stopping_step, lr_decay_count, expected_order='acc', flag_step=args.early)
 
         # early stopping when cur_best_pre_0 is decreasing for given steps. 
         if should_stop == True:
             break
 
+        if should_decay:
+            learning_rate *= args.decay
         # *********************************************************
         # save the user & item embeddings for pretraining.
         if ret['recall'][0] == cur_best_pre_0 and args.save_flag == 1 :

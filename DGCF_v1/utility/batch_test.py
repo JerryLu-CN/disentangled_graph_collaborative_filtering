@@ -16,7 +16,7 @@ import pandas as pd
 import tensorflow as tf
 import numpy as np
 
-cores = multiprocessing.cpu_count() // 2
+cores = multiprocessing.cpu_count() // 8
 
 args = parse_args()
 Ks = eval(args.Ks)
