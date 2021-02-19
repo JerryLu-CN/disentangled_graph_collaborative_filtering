@@ -110,10 +110,10 @@ class GDCF(object):
         if args.corDecay < 1e-9:
             self.cor_loss = tf.constant(0.0)
         else:
-            self.cor_loss = args.corDecay * self.create_cor_loss(self.cor_u_g_embeddings, self.cor_i_g_embeddings)                   
+            self.cor_loss = args.corDecay * self.create_cor_loss(self.cor_u_g_embeddings, self.cor_i_g_embeddings)
 
         # project_vector Orthogonal loss
-        self.orthogonal_loss = self._create_orthogonal_loss(self.weights['project_vector'])
+        self.orthogonal_loss = args.orth * self._create_orthogonal_loss(self.weights['project_vector'])
 
         # self.loss = self.mf_loss + self.emb_loss + self.reg_loss
         self.loss = self.mf_loss + self.emb_loss + self.cor_loss + self.orthogonal_loss
@@ -294,6 +294,9 @@ class GDCF(object):
         ## Please retrain the model and do a grid search for the best experimental setting.
 
         mf_loss = tf.reduce_mean(tf.nn.softplus(-(pos_scores - neg_scores)))
+
+        # maxi = tf.log(tf.nn.sigmoid(pos_scores - neg_scores))
+        # mf_loss = tf.negative(tf.reduce_mean(maxi))
 
         emb_loss = self.decay * regularizer
 

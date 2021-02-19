@@ -42,7 +42,9 @@ def parse_args():
     parser.add_argument('--cor_flag', type=int, default=1,
                         help='Correlation matrix flag')
     parser.add_argument('--corDecay', type=float, default=0.0,
-                        help='Distance Correlation Weight')
+                        help='Distance Correlation Weight') # deprecated
+    parser.add_argument('--orth', type=float, default=0.0,
+                        help='Orthogonal Loss Weight')
     parser.add_argument('--regs', nargs='?', default='[1e-3,1e-4,1e-4]',
                         help='Regularizations.')
         
@@ -58,7 +60,7 @@ def parse_args():
                         help='Test every show_step epochs.')
     parser.add_argument('--early', type=int, default=30,
                         help='Step for stopping')
-    parser.add_argument('--decay', type=int, default=0.2,
+    parser.add_argument('--decay', type=float, default=0.2,
                         help='learning rate decay multiply factor')
     parser.add_argument('--Ks', nargs='?', default='[20, 40, 60, 80, 100]',
                         help='Metrics scale')
