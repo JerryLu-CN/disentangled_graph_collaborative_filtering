@@ -18,6 +18,7 @@ import numpy as np
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 
 from utility.helper import *
 from utility.batch_test import *
@@ -211,8 +212,8 @@ class GDCF(object):
                     factor_embeddings_t = tf.sparse.sparse_dense_matmul(A_factors_t[i], factor_embeddings_t)
                     factor_embeddings = tf.sparse.sparse_dense_matmul(A_factors[i], factor_embeddings)
 
-                    factor_embeddings = tf.sparse.sparse_dense_matmul(D_col_factors[i], factor_embeddings)
-                    factor_embeddings_t = tf.sparse.sparse_dense_matmul(D_col_factors_t[i], factor_embeddings_t)
+                    factor_embeddings = tf.sparse.sparse_dense_matmul(D_row_factors[i], factor_embeddings)
+                    factor_embeddings_t = tf.sparse.sparse_dense_matmul(D_row_factors_t[i], factor_embeddings_t)
 
                     iter_embeddings.append(factor_embeddings)
                     iter_embeddings_t.append(factor_embeddings_t)
