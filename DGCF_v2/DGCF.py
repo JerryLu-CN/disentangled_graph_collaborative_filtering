@@ -374,7 +374,7 @@ class GDCF(object):
         D_row_factors = []
         # get the indices of adjacency matrix.
         A_indices = np.mat([self.all_h_list, self.all_t_list]).transpose()  # [N-of-indice ,2] 包含所有邻接矩阵是1位置的index
-        D_indices = np.mat([list(range(self.n_users+self.n_items)), list(range(self.n_users+self.n_items))]).transpose()
+        D_indices = np.mat([list(range(self.n_users+self.n_items)), list(range(self.n_users+self.n_items))]).transpose() # D是一个对角阵，indice都是(x,x)形式
 
         # apply factor-aware softmax function over the values of adjacency matrix
         # .... A_factor_values is [n_factors, all_h_list]
@@ -437,9 +437,16 @@ class GDCF(object):
 
     def _combine_multi_factor_embedding(self, layer_embeddings):
         '''
-        投影到各个子平面的向量直接加在一起或许能反映结果，因为损失会让各个超平面尽量正交
+        投影到各个子平面的向量直接加在一起或许能反映结果，因为损失会让各个超平面尽量正交 -> 似乎不对，会损失一些没有投的方向的embedding
+        尝试一下maxpooling -> 效果较好
         '''
-        return tf.reduce_sum(tf.stack(layer_embeddings, 0), axis=0)
+        return tf.reduce_max(tf.stack(layer_embeddings, 0), axis=0)
+
+    def _combine_multi_factor_with_weights(self, layer_embeddings):
+        '''layer_embedding:  a n_factor-length list of [N, embed_size]'''
+        return tf.squeeze(tf.layers.dense(tf.stack(layer_embeddings, 2), units=1,
+                               activation=tf.nn.tanh,
+                               kernel_initializer=tf.contrib.layers.xavier_initializer()))
 
     def _create_orthogonal_loss(self, project_vector):
         '''兼顾x和y之间趋于0和x*x之间接近1'''
