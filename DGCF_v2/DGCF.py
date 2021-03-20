@@ -171,6 +171,8 @@ class GDCF(object):
         
         factor_num = [self.n_factors, self.n_factors, self.n_factors] # deprecated
         iter_num = [self.n_iterations, self.n_iterations, self.n_iterations] # deprecated
+
+        first_layer = True
         for k in range(0, self.n_layers):
             # prepare the output embedding list
             # .... layer_embeddings stores a (n_factors)-len list of outputs derived from the last routing iterations.
@@ -183,8 +185,13 @@ class GDCF(object):
             # .... ego_layer_embeddings is a (n_factors)-leng list of embeddings [n_users+n_items, embed_size/n_factors]
             # ego_layer_embeddings = tf.split(ego_embeddings, n_factors_l, 1)
             # ego_layer_embeddings_t = tf.split(ego_embeddings, n_factors_l, 1)
-            ego_layer_embeddings = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
-            ego_layer_embeddings_t = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
+            if first_layer:
+                ego_layer_embeddings = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
+                ego_layer_embeddings_t = self._project_with_normal_vector(ego_embeddings, self.weights['project_vector'])
+                first_layer = False
+            else:
+                ego_layer_embeddings = layer_embeddings
+                ego_layer_embeddings_t = layer_embeddings_t
 
             # perform routing mechanism
             for t in range(0, n_iterations_l):
@@ -256,16 +263,18 @@ class GDCF(object):
             #side_embeddings_t = tf.concat(layer_embeddings_t, 1)
             side_embeddings = self._combine_multi_factor_embedding(layer_embeddings)
             side_embeddings_t = self._combine_multi_factor_embedding(layer_embeddings_t)
-            ego_embeddings = side_embeddings
-            ego_embeddings_t = side_embeddings_t
+            #ego_embeddings = side_embeddings
+            #ego_embeddings_t = side_embeddings_t
             # concatenate outputs of all layers
-            all_embeddings_t += [ego_embeddings_t]
-            all_embeddings += [ego_embeddings]
+            #all_embeddings_t += [ego_embeddings_t]
+            #all_embeddings += [ego_embeddings]
+            all_embeddings_t += [side_embeddings_t]
+            all_embeddings += [side_embeddings]
 
             ## iter for iteration end ##
 
         all_embeddings = tf.stack(all_embeddings, 1)
-        all_embeddings = tf.reduce_mean(all_embeddings, axis=1, keepdims=False)
+        all_embeddings = tf.reduce_mean(all_embeddings, axis=1, keepdims=False)  # try maxpooling
 
         all_embeddings_t = tf.stack(all_embeddings_t, 1)
         all_embeddings_t = tf.reduce_mean(all_embeddings_t, axis=1, keep_dims=False)
